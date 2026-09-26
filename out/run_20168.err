@@ -1,0 +1,13 @@
+
+EnvironmentNameNotFound: Could not find conda environment: triangle_splatting2
+You can list all discoverable environments with `conda info --envs`.
+
+
+WARNING: Ignoring invalid distribution ~iofiles (/opt/miniforge3/lib/python3.12/site-packages)
+WARNING: Ignoring invalid distribution ~yparsing (/opt/miniforge3/lib/python3.12/site-packages)
+WARNING: Ignoring invalid distribution ~iofiles (/opt/miniforge3/lib/python3.12/site-packages)
+WARNING: Ignoring invalid distribution ~yparsing (/opt/miniforge3/lib/python3.12/site-packages)
+
+[notice] A new release of pip is available: 26.0.1 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+ERROR: pytorch3d-0.7.5-cp311-cp311-linux_x86_64.whl is not a supported wheel on this platform.

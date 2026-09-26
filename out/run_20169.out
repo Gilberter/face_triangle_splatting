@@ -1,0 +1,4 @@
+Activating environment: triangle-splatting2
+Running target: pip
+With arguments: install https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py311_cu121_pyt210/pytorch3d-0.7.5-cp311-cp311-linux_x86_64.whl
+Collecting pytorch3d==0.7.5
