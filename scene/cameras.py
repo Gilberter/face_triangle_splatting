@@ -114,7 +114,7 @@ class Camera(nn.Module):
             x1 = min(int(xs.max().item()) + pad + 1, self.image_width)
         else:
             y0, y1, x0, x1 = 0, self.image_height, 0, self.image_width
-            self.mask_bbox = (y0, y1, x0, x1)
+        self.mask_bbox = (y0, y1, x0, x1)
 
 
 class MiniCam:
