@@ -25,7 +25,13 @@ from argparse import ArgumentParser, Namespace
 from random import randint
 
 import torch
-from arguments import ModelParams, OptimizationParams, PipelineParams, update_indoor
+from arguments import (
+    ModelParams,
+    OptimizationParams,
+    PipelineParams,
+    update_few_shot,
+    update_indoor,
+)
 from scene import Scene, TriangleModel
 from tqdm import tqdm
 from triangle_renderer import render
@@ -152,12 +158,12 @@ def training(
         )  # [1, 3, H0, W0]
         gt_normal = seg_ds_area.squeeze(0)  # -> [3, H0, W0]
 
-        # pixel_loss = l1_loss(image, gt_image)
+        # --- restrict loss to the face region (background is masked out) ---
         face_mask = viewpoint_cam.face_mask  # [1,H,W]
         y0, y1, x0, x1 = viewpoint_cam.mask_bbox
 
         image_c = (image * face_mask)[:, y0:y1, x0:x1]
-        gt_image_c = gt_image[:, y0:y1, x0:x1]  # already zero outside the face
+        gt_image_c = gt_image[:, y0:y1, x0:x1]  # background already ~0 here
         mask_c = face_mask[:, y0:y1, x0:x1]
 
         pixel_loss = masked_l1_loss(image_c, gt_image_c, mask_c)
@@ -174,8 +180,11 @@ def training(
             1.0 - ssim(image_c, gt_image_c)
         )
 
+        # loss normal and distortion
         rend_normal = render_pkg["rend_normal"]
-        lambda_normal = opt.lambda_normals if iteration > opt.iteration_mesh else 0
+        lambda_normal = (
+            opt.lambda_normals if iteration > opt.iteration_mesh else 0
+        )  # 0.001
 
         rend_normal_c = (rend_normal * face_mask)[:, y0:y1, x0:x1]
         gt_normal_c = (gt_normal * face_mask)[:, y0:y1, x0:x1]
@@ -375,7 +384,7 @@ def training_report(
     loss_fn,
     elapsed,
     testing_iterations,
-    scene: Scene,
+    scene,
     renderFunc,
     renderArgs,
 ):
@@ -386,7 +395,11 @@ def training_report(
         tb_writer.add_scalar("train_loss_patches/total_loss", loss.item(), iteration)
         tb_writer.add_scalar("iter_time", elapsed, iteration)
 
-    # Report test and samples of training set
+    # With --eval off and only 6 training images, there is no held-out test
+    # set to evaluate against, so we skip the validation/report block entirely.
+    if not testing_iterations:
+        return
+
     if iteration % 1000 == 0:
         torch.cuda.empty_cache()
         validation_configs = (
@@ -468,16 +481,6 @@ def training_report(
                         config["name"] + "/loss_viewpoint - psnr", psnr_test, iteration
                     )
 
-                if tb_writer:
-                    tb_writer.add_scalar(
-                        config["name"] + "/loss_viewpoint - l1_loss",
-                        pixel_loss_test,
-                        iteration,
-                    )
-                    tb_writer.add_scalar(
-                        config["name"] + "/loss_viewpoint - psnr", psnr_test, iteration
-                    )
-
         torch.cuda.empty_cache()
 
 
@@ -489,16 +492,19 @@ if __name__ == "__main__":
     pp = PipelineParams(parser)
     parser.add_argument("--debug_from", type=int, default=-1)
     parser.add_argument("--detect_anomaly", action="store_true", default=False)
-    parser.add_argument(
-        "--test_iterations", nargs="+", type=int, default=[7_000, 30_000]
-    )
-    parser.add_argument(
-        "--save_iterations", nargs="+", type=int, default=[7_000, 30_000]
-    )
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)
     parser.add_argument("--indoor", action="store_true", default=False)
+    parser.add_argument(
+        "--few_shot",
+        action="store_true",
+        default=False,
+        help="Use fast, small-dataset settings tuned for a "
+        "handful of training images (e.g. 6-image face capture).",
+    )
 
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
@@ -516,6 +522,22 @@ if __name__ == "__main__":
 
     if args.indoor:
         ops = update_indoor(ops)
+
+    if args.few_shot:
+        ops = update_few_shot(ops)
+        # Default sh_degree=3 is overkill and prone to overfitting with only
+        # a few views; a face captured from few cameras has little reliable
+        # view-dependent signal to fit anyway.
+        lps.sh_degree = min(lps.sh_degree, 1)
+        # No held-out cameras — with only 6 images every one of them should
+        # go into training. args.eval controls whether Scene splits off a
+        # test set (via llffhold in dataset_readers.py); leave it False
+        # unless explicitly passed.
+        if not args.eval:
+            print(
+                "[few_shot] --eval not set: all images will be used for training, "
+                "no test/PSNR evaluation split."
+            )
 
     # Configure and run training
     torch.autograd.set_detect_anomaly(args.detect_anomaly)

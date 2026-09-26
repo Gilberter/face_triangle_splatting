@@ -4,7 +4,7 @@
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
-# This software is free for non-commercial, research and evaluation use 
+# This software is free for non-commercial, research and evaluation use
 # under the terms of the LICENSE_GS.md file.
 #
 # For inquiries contact george.drettakis@inria.fr
@@ -18,15 +18,17 @@
 # For inquiries contact jan.held@uliege.be
 #
 
-from argparse import ArgumentParser, Namespace
-import sys
 import os
+import sys
+from argparse import ArgumentParser, Namespace
+
 
 class GroupParams:
     pass
 
+
 class ParamGroup:
-    def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
+    def __init__(self, parser: ArgumentParser, name: str, fill_none=False):
         group = parser.add_argument_group(name)
         for key, value in vars(self).items():
             shorthand = False
@@ -37,9 +39,13 @@ class ParamGroup:
             value = value if not fill_none else None
             if shorthand:
                 if t == bool:
-                    group.add_argument("--" + key, ("-" + key[0:1]), default=value, action="store_true")
+                    group.add_argument(
+                        "--" + key, ("-" + key[0:1]), default=value, action="store_true"
+                    )
                 else:
-                    group.add_argument("--" + key, ("-" + key[0:1]), default=value, type=t)
+                    group.add_argument(
+                        "--" + key, ("-" + key[0:1]), default=value, type=t
+                    )
             else:
                 if t == bool:
                     group.add_argument("--" + key, default=value, action="store_true")
@@ -53,7 +59,8 @@ class ParamGroup:
                 setattr(group, arg[0], arg[1])
         return group
 
-class ModelParams(ParamGroup): 
+
+class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
         self._source_path = ""
@@ -70,6 +77,7 @@ class ModelParams(ParamGroup):
         g.source_path = os.path.abspath(g.source_path)
         return g
 
+
 class PipelineParams(ParamGroup):
     def __init__(self, parser):
         self.convert_SHs_python = False
@@ -77,6 +85,7 @@ class PipelineParams(ParamGroup):
         self.depth_ratio = 1.0
         self.debug = False
         super().__init__(parser, "Pipeline Parameters")
+
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
@@ -91,13 +100,13 @@ class OptimizationParams(ParamGroup):
         self.densify_until_iter = 13000
 
         self.random_background = False
-        
-        self.feature_lr = 0.0016 # 0.0025
+
+        self.feature_lr = 0.0016  # 0.0025
         self.max_points = 3000000
 
         # Opacity & weight
         self.set_weight = 0.28
-        self.weight_lr =  0.03
+        self.weight_lr = 0.03
         self.lambda_weight = 1.9e-06
 
         # Normal loss
@@ -136,11 +145,10 @@ class OptimizationParams(ParamGroup):
 
         self.prune_size = 1400
 
-
-
         super().__init__(parser, "Optimization Parameters")
 
-def get_combined_args(parser : ArgumentParser):
+
+def get_combined_args(parser: ArgumentParser):
     cmdlne_string = sys.argv[1:]
     cfgfile_string = "Namespace()"
     args_cmdline = parser.parse_args(cmdlne_string)
@@ -149,18 +157,18 @@ def get_combined_args(parser : ArgumentParser):
         cfgfilepath = os.path.join(args_cmdline.model_path, "cfg_args")
         print("Looking for config file in", cfgfilepath)
         with open(cfgfilepath) as cfg_file:
-            print("Config file found: {}".format(cfgfilepath))
+            print(f"Config file found: {cfgfilepath}")
             cfgfile_string = cfg_file.read()
     except TypeError:
         print("Config file not found at")
-        pass
     args_cfgfile = eval(cfgfile_string)
 
     merged_dict = vars(args_cfgfile).copy()
-    for k,v in vars(args_cmdline).items():
+    for k, v in vars(args_cmdline).items():
         if v != None:
             merged_dict[k] = v
     return Namespace(**merged_dict)
+
 
 def update_indoor(params):
     params.add_percentage = 1.27
@@ -174,5 +182,42 @@ def update_indoor(params):
     params.lambda_weight = 0.0
     params.lambda_normals = 0.025
     params.prune_size = 1300
+
+    return params
+
+
+def update_few_shot(params):
+    """Tuned for very small (~6 image) single-subject captures (e.g. a face).
+    Fewer iterations, smaller triangle budget, earlier/less aggressive
+    densification, since a handful of views can't constrain a huge
+    point/triangle count or long view-dependent SH training."""
+    params.iterations = 8000
+    params.position_lr_max_steps = 8000
+
+    params.max_points = 200_000
+
+    params.densify_from_iter = 300
+    params.densify_until_iter = 4000
+    params.densification_interval = 400
+    params.splitt_large_triangles = 40
+
+    params.start_pruning = 800
+    params.prune_triangles_threshold = 0.235
+
+    params.iteration_mesh = 1500
+    params.lambda_normals = 0.05
+
+    params.sigma_start = 0
+    params.sigma_until = 8000
+
+    params.start_opacity_floor = 1500
+    params.final_opacity_iter = 6000
+
+    params.start_upsampling = 6000
+    params.upscaling_factor = 2
+
+    params.size_probs_zero = 7.5e-05
+    params.size_probs_zero_image_space = 0.0
+    params.prune_size = 1400
 
     return params
